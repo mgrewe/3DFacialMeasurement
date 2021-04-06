@@ -102,8 +102,109 @@ def identify_3D_landmarks(mesh, return_all_landmarks = False, visualize = True, 
         return [landmarks_3d[x] for x in _landmark_ids]
 
 
-def identify_2D_landmarks(image):
+def identify_photographic_landmarks(mesh, visualize = True, perturbation_iterations = 10, perturbation_range = 200):
+    """
+    Returns a set of 2D facial landmarks in virtual snapshots
+
+    :param mesh: vtkPolyData polygonal mesh
+    :return: A np array of 3D points
+    """
+
+    # Find the coarse facial orientation in 3D
+    c = _compute_centroid(mesh)
+    d = 600
+    camera_positions = [
+        (c[0], c[1], c[2]+d),
+        (c[0], c[1]+d, c[2]+d),
+        (c[0]+d, c[1], c[2]+d),
+        (c[0], c[1]-d, c[2]+d),
+        (c[0]-d, c[1], c[2]+d)
+    ]
+
+    landmarks_3d = None
+    for position in camera_positions:
+        scene = Scene(mesh, position, c, 50, 500)
+        image = scene.captureImage()
+
+        if len(fr.face_landmarks(image)) > 0: 
+            print("Face Located")
+            landmarks_2d = identify_2D_landmarks(image)
+            if visualize:
+                _check_landmarks_2d(image, landmarks_2d)
+            landmarks_3d = [scene.pickPoint(point_2d) for point_2d in landmarks_2d]
+            break
+
+    if landmarks_3d == None:
+        print("Face Not Found!")
+        return
+
+    focal_point, camera_position, view_up = _compute_frontal_camera_settings(landmarks_3d, 800)
+
+    # recompute the camera position for better landmarks
+    for i in range(2):
+        scene2 = Scene(mesh, camera_position, focal_point, 20, 800, view_up)
+        image = scene2.captureImage()
+        #_check_landmarks_2d(image)
+
+        landmarks_2d = identify_2D_landmarks(image)
+        if len(landmarks_2d) > 0:
+            landmarks_3d = [scene2.pickPoint(point_2d) for point_2d in landmarks_2d]
+            focal_point, camera_position, view_up = _compute_frontal_camera_settings(landmarks_3d, 800)
+
+
+
+    print("Doing random samples")
+    collected_lm = None
+    collected_lm_2d = None
+    camera_parameters = {}
+    # recompute the camera position for better landmarks
+    i = 0
+    while i < perturbation_iterations:
+        print(i)
+        perturb = np.random.uniform(-perturbation_range,perturbation_range,2)
+        perturb = np.hstack([perturb,0])
+        camera_parameters[i] = {'camera_position':camera_position + perturb,
+                                'focal_point': focal_point,
+                                'view_angle': 20,
+                                'size': 800,
+                                'view_up':view_up
+                                }
+        scene2 = Scene(mesh, camera_position + perturb, focal_point, 20, 800, view_up)
+        image = scene2.captureImage()
+        
+        landmarks_2d = identify_2D_landmarks(image)
+        if len(landmarks_2d) > 0:
+            if (visualize):
+                _check_landmarks_2d(image,landmarks_2d)
+            landmarks_3d = np.array([scene2.pickPoint(point_2d) for point_2d in landmarks_2d]).flatten()
+
+            if collected_lm is not None:
+                collected_lm = np.vstack([collected_lm,landmarks_3d])
+            else:
+                collected_lm = landmarks_3d
+            
+            landmarks_2d = np.array(landmarks_2d).reshape([1,-1])
+            if collected_lm_2d is not None:
+                collected_lm_2d = np.vstack([collected_lm_2d,landmarks_2d])
+            else:
+                collected_lm_2d = landmarks_2d
+
+            i+=1
+        else:
+            print("Face not detected...")
+    if landmarks_3d.shape[0] > 1:
+        landmarks_3d=np.nanmedian(collected_lm,axis=0).reshape(-1,3)
+
+    if visualize:
+        _check_landmarks_3d(mesh, landmarks_3d)
+
+    return collected_lm_2d, camera_parameters, landmarks_3d
+    
+def identify_2D_landmarks(image, return_all = False):
     landmarks = fr.face_landmarks(image)[0]
+
+    if return_all:
+        return landmarks
 
     # unpack from the dictionary into the right order...
     landmark_list = landmarks['chin'] + landmarks['left_eyebrow'] + \
