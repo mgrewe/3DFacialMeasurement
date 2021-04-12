@@ -67,6 +67,8 @@ def identify_3D_landmarks(mesh, return_all_landmarks = False, visualize = True, 
         collected_lm = None
         # recompute the camera position for better landmarks
         i = 0
+        # Set fixed seed
+        np.random.seed(1234567)
         while i < perturbation_iterations:
             print(i)
             perturb = np.random.uniform(-perturbation_range,perturbation_range,2)
