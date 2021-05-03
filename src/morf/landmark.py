@@ -105,7 +105,11 @@ def identify_3D_landmarks(mesh, return_all_landmarks = False, visualize = True, 
 
 
 def identify_2D_landmarks(image):
-    landmarks = fr.face_landmarks(image)[0]
+    landmarks = fr.face_landmarks(image)
+    if not len(landmarks):
+        return list()
+
+    landmarks = landmarks[0]
 
     # unpack from the dictionary into the right order...
     landmark_list = landmarks['chin'] + landmarks['left_eyebrow'] + \
